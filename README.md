@@ -3,6 +3,10 @@ A backport patch of support for the Nexx WT3020 (only those with 8MB of flash) t
 
 Based on code from Openwrt changeset 42983 
 https://dev.openwrt.org/changeset/42983
+Thanks Roger Pueyo!
+
+And also code from Justin Liu
+https://github.com/rssnsj/openwrt-xiaomi-mini
 
 ##To use
 1. Download .patch file
