@@ -1,0 +1,212 @@
+#Adds support for the NEXX WT3020(8MB version) to OpenWRT 14.07 Barrier Breaker
+#This is a backport of OpenWRT changeset 42983 by Roger Pueyo
+#June 30th 2015
+#Michael Nothhard
+
+--- a/target/linux/ramips/base-files/etc/diag.sh
++++ b/target/linux/ramips/base-files/etc/diag.sh
+@@ -165,6 +165,9 @@ get_status_led() {
+ 	wnce2001)
+ 		status_led="netgear:green:power"
+ 		;;
++	nexx-wt3020)
++		status_led="nexx:blue:power"
++		;;
+ 	mzk-w300nh2)
+ 		status_led="mzkw300nh2:green:power"
+ 		;;
+--- a/target/linux/ramips/base-files/etc/uci-defaults/01_leds
++++ b/target/linux/ramips/base-files/etc/uci-defaults/01_leds
+@@ -204,6 +204,9 @@ case $board in
+ 		set_usb_led "wr8305rt:usb"
+ 		set_wifi_led "wr8305rt:wifi"
+ 		;;
++	wt3020)
++		ucidef_set_led_default "power" "power" "nexx:blue:power" "0"
++		;;
+ 	y1 |\
+ 	y1s)
+ 		ucidef_set_led_default "power" "power" "lenovo:blue:power" "1"
+--- a/target/linux/ramips/base-files/etc/uci-defaults/02_network
++++ b/target/linux/ramips/base-files/etc/uci-defaults/02_network
+@@ -120,6 +120,7 @@ ramips_setup_interfaces()
+ 	hg255d | \
+ 	rt-n14u | \
+ 	wrtnode | \
++	wt3020 | \
+ 	ur-326n4g | \
+ 	zbt-wa05)
+ 		ucidef_set_interfaces_lan_wan "eth0.1" "eth0.2"
+--- a/target/linux/ramips/base-files/lib/ramips.sh
++++ b/target/linux/ramips/base-files/lib/ramips.sh
+@@ -178,6 +178,9 @@ ramips_board_detect() {
+ 	*"NexAira BC2")
+ 		name="bc2"
+ 		;;
++	*"Nexx WT3020")
++		name="wt3020"
++		;;
+ 	*"NW718")
+ 		name="nw718"
+ 		;;
+--- /dev/null
++++ b/target/linux/ramips/dts/WT3020-8M.dts
+@@ -0,0 +1,100 @@
++/dts-v1/;
++
++/include/ "mt7620n.dtsi"
++
++/ {
++	compatible = "wt3020", "ralink,mt7620n-soc";
++	model = "Nexx WT3020";
++
++	palmbus@10000000 {
++                gpio2: gpio@660 {
++                        status = "okay";
++                };
++
++                gpio3: gpio@688 {
++                        status = "okay";
++                };
++
++		spi@b00 {
++			status = "okay";
++
++			m25p80@0 {
++				#address-cells = <1>;
++				#size-cells = <1>;
++				compatible = "w25q64";
++				reg = <0 0>;
++				linux,modalias = "m25p80", "w25q64";
++				spi-max-frequency = <10000000>;
++
++				partition@0 {
++					label = "u-boot";
++					reg = <0x0 0x30000>;
++					read-only;
++				};
++
++				partition@30000 {
++					label = "u-boot-env";
++					reg = <0x30000 0x10000>;
++					read-only;
++				};
++
++				factory: partition@40000 {
++					label = "factory";
++					reg = <0x40000 0x10000>;
++					read-only;
++				};
++
++				partition@50000 {
++					label = "firmware";
++					reg = <0x50000 0x7b0000>;
++				};
++			};
++		};
++	};
++
++	ehci@101c0000 {
++		status = "okay";
++	};
++
++	ohci@101c1000 {
++		status = "okay";
++	};
++
++	ethernet@10100000 {
++		mtd-mac-address = <&factory 0x4>;
++		ralink,port-map = "wllll";
++	};
++
++	wmac@10180000 {
++		ralink,mtd-eeprom = <&factory 0>;
++	};
++
++	pinctrl {
++		state_default: pinctrl0 {
++			default {
++				ralink,group = "ephy", "wled", "pa", "i2c", "wdt", "uartf";
++				ralink,function = "gpio";
++			};
++		};
++	};
++
++	gpio-keys-polled {
++		compatible = "gpio-keys-polled";
++		#address-cells = <1>;
++		#size-cells = <0>;
++		poll-interval = <20>;
++		reset {
++			label = "reset";
++			gpios = <&gpio0 1 1>;
++			linux,code = <0x198>;
++		};
++	};
++
++        gpio-leds {
++                compatible = "gpio-leds";
++                power {
++                        label = "nexx:blue:power";
++                        gpios = <&gpio3 0 0>;
++                };
++        };
++};
+--- a/target/linux/ramips/image/Makefile
++++ b/target/linux/ramips/image/Makefile
+@@ -546,6 +546,8 @@ Image/Build/Profile/WNCE2001=$(call Buil
+ 
+ Image/Build/Profile/WR512-3GN=$(call BuildFirmware/DefaultDualSize/$(1),$(1),wr512-3ng,WR512-3GN)
+ 
++Image/Build/Profile/NEXX-WT3020-8MB=$(call BuildFirmware/Default16M/$(1),$(1),wt3020-8m,WT3020-8M)
++
+ Image/Build/Profile/UR-326N4G=$(call BuildFirmware/Default4M/$(1),$(1),ur-326n4g,UR-326N4G)
+ 
+ Image/Build/Profile/UR-336UN=$(call BuildFirmware/Default8M/$(1),$(1),ur-336un,UR-336UN)
+@@ -632,6 +634,7 @@ define Image/Build/Profile/Default
+ 	$(call Image/Build/Profile/WNCE2001,$(1))
+ 	$(call Image/Build/Profile/WR512-3GN,$(1))
+ 	$(call Image/Build/Profile/WR6202,$(1))
++	$(call Image/Build/Profile/NEXX-WT3020-8MB,$(1))
+ 	$(call Image/Build/Profile/X5,$(1))
+ 	$(call Image/Build/Profile/X8,$(1))
+ 	$(call Image/Build/Profile/XDXRN502J,$(1))
+@@ -756,6 +759,7 @@ Image/Build/Profile/WMR300=$(call BuildF
+ Image/Build/Profile/RT-N14U=$(call BuildFirmware/Default8M/$(1),$(1),rt-n14u,RT-N14U)
+ Image/Build/Profile/WR8305RT=$(call BuildFirmware/Default8M/$(1),$(1),wr8305rt,WR8305RT)
+ Image/Build/Profile/WRTNODE=$(call BuildFirmware/Default16M/$(1),$(1),wrtnode,WRTNODE)
++Image/Build/Profile/WT3020=$(call BuildFirmware/DefaultDualSize/$(1),$(1),wt3020,WT3020)
+ Image/Build/Profile/ZBT-WA05=$(call BuildFirmware/Default8M/$(1),$(1),zbt-wa05,ZBT-WA05)
+ 
+ ifeq ($(SUBTARGET),mt7620n)
+@@ -766,6 +770,7 @@ define Image/Build/Profile/Default
+ 	$(call Image/Build/Profile/RT-N14U,$(1))
+ 	$(call Image/Build/Profile/WR8305RT,$(1))
+ 	$(call Image/Build/Profile/WRTNODE,$(1))
++	$(call Image/Build/Profile/WT3020,$(1))
+ 	$(call Image/Build/Profile/ZBT-WA05,$(1))
+ endef
+ endif
+--- /dev/null
++++ b/target/linux/ramips/mt7620n/profiles/nexx-wt3020-8mb.mk
+@@ -0,0 +1,20 @@
++#
++# Copyright (C) 2011 OpenWrt.org
++#
++# This is free software, licensed under the GNU General Public License v2.
++# See /LICENSE for more information.
++#
++
++define Profile/NEXX-WT3020-8MB
++	NAME:=Nexx WT3020 8MB
++	PACKAGES:=\
++		kmod-usb-core kmod-usb2 kmod-usb-ohci \
++		kmod-ledtrig-usbdev \
++		block-mount mountd kmod-fs-ext4 \
++		ppp-mod-pppoe e2fsprogs kmod-ledtrig-usbdev fdisk
++endef
++
++define Profile/Default/Description
++	NEXX-WT3020-8MB.
++endef
++$(eval $(call Profile,NEXX-WT3020-8MB))
